@@ -28,7 +28,7 @@ cd sequential_elasticity
 mkdir build && cd build
 cmake ..
 make
-./elasticity_seq
+./seq_program
 ```
 
 ### Параллельная
@@ -38,7 +38,7 @@ cd parallel_elasticity
 mkdir build && cd build
 cmake ..
 make
-mpirun -np 4 ./elasticity_par
+mpirun -np 4 ./par_program
 ```
 
 ## Ограничения
