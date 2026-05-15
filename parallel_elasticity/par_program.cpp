@@ -412,7 +412,7 @@ int main(int argc, char **argv)
     {
         Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
-        for (unsigned int ref = 0; ref < 5; ++ref)
+        for (unsigned int ref = 0; ref < 4; ++ref)
         {
             ElasticitySolver<3> solver(ref);
             solver.run();
