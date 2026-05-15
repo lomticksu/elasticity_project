@@ -336,7 +336,7 @@ void ElasticitySolver<dim>::output_results() const
 
     std::cout << "  Result is in file: " << filename << std::endl;
 
-    std::cout << "  Maximum u_" << dim - 1 << ": " << solution.linfty_norm() << std::endl;
+    std::cout << "  Maximum u_" << dim  << " = " << solution.linfty_norm() << std::endl;
 }
 
 
