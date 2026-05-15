@@ -388,7 +388,8 @@ void ElasticitySolver<dim>::output_results() const
     }
 
     pcout << "  Result is in file: solution_r" << refinement_level << ".pvtu" << std::endl;
-    pcout << "  Linfty norm of solution: " << solution.linfty_norm() << std::endl;
+    
+    pcout << "  Maximum u_" << dim << " = " << solution.linfty_norm() << std::endl
 }
 
 
