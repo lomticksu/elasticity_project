@@ -135,7 +135,6 @@ void ElasticitySolver<dim>::setup_system()
     system_rhs.reinit(n_dofs);
 
     constraints.clear();
-    DoFTools::make_hanging_node_constraints(dof_handler, constraints);
     VectorTools::interpolate_boundary_values(dof_handler,
                                              types::boundary_id(1),
                                              Functions::ZeroFunction<dim>(dim),
