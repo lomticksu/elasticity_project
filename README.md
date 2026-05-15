@@ -13,8 +13,8 @@
 
 ## Требования
 
-- CMake ≥ 3.10
-- deal.II ≥ 9.5 (с PETSc и MPI)
+- CMake ≥ 3.13.4
+- deal.II = 9.7 (с PETSc и MPI)
 - PETSc
 - MPI
 - C++17
