@@ -152,7 +152,6 @@ void ElasticitySolver<dim>::setup_system()
     pcout << "  Number of degrees of freedom: " << n_dofs << std::endl;
 
     constraints.clear();
-    DoFTools::make_hanging_node_constraints(dof_handler, constraints);
     VectorTools::interpolate_boundary_values(dof_handler,
                                              types::boundary_id(1),
                                              Functions::ZeroFunction<dim>(dim),
