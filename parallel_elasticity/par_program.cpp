@@ -1,6 +1,7 @@
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/function.h>
 #include <deal.II/base/timer.h>
+#include <deal.II/base/utilities.h>
 #include <deal.II/base/conditional_ostream.h>
 
 #include <deal.II/lac/petsc_vector.h>
@@ -52,6 +53,13 @@ private:
 
     const unsigned int refinement_level;
 
+    MPI_Comm mpi_communicator;
+
+    const unsigned int n_mpi_processes;
+    const unsigned int this_mpi_process;
+
+    ConditionalOStream pcout;
+    
     parallel::shared::Triangulation<dim> triangulation;
     const FESystem<dim> fe;
     DoFHandler<dim>     dof_handler;
@@ -61,13 +69,6 @@ private:
     PETScWrappers::MPI::SparseMatrix system_matrix;
     PETScWrappers::MPI::Vector system_rhs;
     Vector<double>       solution;
-    
-    MPI_Comm mpi_communicator;
-
-    const unsigned int n_mpi_processes;
-    const unsigned int this_mpi_process;
-
-    ConditionalOStream pcout;
 
     IndexSet locally_owned_dofs;
     IndexSet locally_relevant_dofs;
@@ -94,14 +95,14 @@ void right_hand_side(const std::vector<Point<dim>>& points, std::vector<Tensor<1
 template <int dim>
 ElasticitySolver<dim>::ElasticitySolver(unsigned int refinement_level)
     : refinement_level(refinement_level)
-    , triangulation(MPI_COMM_WORLD)
-    , fe(FE_Q<dim>(1), dim)
-    , dof_handler(triangulation)
     , mpi_communicator(MPI_COMM_WORLD)
     , n_mpi_processes(Utilities::MPI::n_mpi_processes(mpi_communicator))
     , this_mpi_process(Utilities::MPI::this_mpi_process(mpi_communicator))
     , pcout(std::cout, (this_mpi_process == 0))
-    , timer(pcout, TimerOutput::summary, TimerOutput::wall_times)
+    , triangulation(mpi_communicator)
+    , fe(FE_Q<dim>(1), dim)
+    , dof_handler(triangulation)
+    , timer(mpi_communicator, pcout, TimerOutput::summary, TimerOutput::wall_times)
 {
 }
 
@@ -153,9 +154,9 @@ void ElasticitySolver<dim>::setup_system()
     constraints.clear();
     DoFTools::make_hanging_node_constraints(dof_handler, constraints);
     VectorTools::interpolate_boundary_values(dof_handler,
-        types::boundary_id(1),
-        Functions::ZeroFunction<dim>(dim),
-        constraints);
+                                             types::boundary_id(1),
+                                             Functions::ZeroFunction<dim>(dim),
+                                             constraints);
     constraints.close();
 
     DynamicSparsityPattern dsp(locally_relevant_dofs);
@@ -187,14 +188,14 @@ void ElasticitySolver<dim>::assemble_system()
     const QGauss<dim - 1> face_quadrature_formula(fe.degree + 1);
 
     FEValues<dim> fe_values(fe,
-        quadrature_formula,
-        update_values | update_gradients |
-        update_quadrature_points | update_JxW_values);
+                            quadrature_formula,
+                            update_values | update_gradients |
+                             update_quadrature_points | update_JxW_values);
 
     FEFaceValues<dim> fe_face_values(fe,
-        face_quadrature_formula,
-        update_values |
-        update_quadrature_points | update_JxW_values);
+                                     face_quadrature_formula,
+                                     update_values |
+                                      update_quadrature_points | update_JxW_values);
 
     const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
     const unsigned int n_q_points = quadrature_formula.size();
@@ -319,11 +320,11 @@ void ElasticitySolver<dim>::solve()
     SolverControl solver_control(10000, 1e-10 * system_rhs.l2_norm());
     PETScWrappers::SolverCG cg(solver_control);
 
-    PETScWrappers::PreconditionBlockJacobi preconditioner(system_matrix);
+    PETScWrappers::PreconditionBlockJacobi preconditioner;
+    preconditioner.initialize(system_matrix);
 
     cg.solve(system_matrix, localized_solution, system_rhs, preconditioner);
     solution = localized_solution;
-
     constraints.distribute(solution);
 
     pcout << "  Last convergence: " << solver_control.last_value() << std::endl;
@@ -334,8 +335,6 @@ template <int dim>
 void ElasticitySolver<dim>::output_results() const
 {
     TimerOutput::Scope scope(timer, "5. output_results");
-
-    const Vector<double> localized_solution(solution);
 
     DataOut<dim> data_out;
     data_out.attach_dof_handler(dof_handler);
@@ -359,22 +358,40 @@ void ElasticitySolver<dim>::output_results() const
         DEAL_II_NOT_IMPLEMENTED();
     }
 
-    std::vector<DataComponentInterpretation::DataComponentInterpretation> 
+    std::vector<DataComponentInterpretation::DataComponentInterpretation>
         data_component_interpretation(dim, DataComponentInterpretation::component_is_part_of_vector);
-    
-    data_out.add_data_vector(localized_solution, solution_names, DataOut<dim>::type_dof_data, data_component_interpretation);
-    
+
+    data_out.add_data_vector(solution, solution_names, DataOut<dim>::type_dof_data, data_component_interpretation);
+
+    Vector<float> subdomain(triangulation.n_active_cells());
+    for (unsigned int i = 0; i < subdomain.size(); ++i)
+    {
+        subdomain[i] = triangulation.locally_owned_subdomain();
+    }
+    data_out.add_data_vector(subdomain, "subdomain");
+
     data_out.build_patches();
 
     const std::string filename = "solution_r" + std::to_string(refinement_level) + "_" + std::to_string(this_mpi_process) + ".vtu";
-
     std::ofstream output(filename);
     data_out.write_vtu(output);
 
-    pcout << "  Result is in file: solution_r" << std::to_string(refinement_level) << ".vtu" << std::endl;
+    if (this_mpi_process == 0)
+    {
+        std::vector<std::string> filenames;
+        for (unsigned int i = 0; i < n_mpi_processes; ++i)
+        {
+            filenames.push_back("solution_r" + std::to_string(refinement_level) + "_" + std::to_string(i) + ".vtu");
+        }
 
-    pcout << "  Linfty norm of solution: " << localized_solution.linfty_norm() << std::endl;
+        std::ofstream pvtu("solution_r" + std::to_string(refinement_level) + ".pvtu");
+        data_out.write_pvtu_record(pvtu, filenames);
+    }
+
+    pcout << "  Result is in file: solution_r" << refinement_level << ".pvtu" << std::endl;
+    pcout << "  Linfty norm of solution: " << solution.linfty_norm() << std::endl;
 }
+
 
 template <int dim>
 void ElasticitySolver<dim>::run()
@@ -395,7 +412,7 @@ int main(int argc, char **argv)
     {
         Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
-        for (unsigned int ref = 1; ref < 5; ++ref)
+        for (unsigned int ref = 0; ref < 5; ++ref)
         {
             ElasticitySolver<3> solver(ref);
             solver.run();
