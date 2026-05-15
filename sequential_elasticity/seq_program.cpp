@@ -357,7 +357,7 @@ int main()
 {
     try
     {
-        for (unsigned int ref = 0; ref < 5; ++ref)
+        for (unsigned int ref = 0; ref < 4; ++ref)
         {
             ElasticitySolver<3> solver(ref);
             solver.run();
